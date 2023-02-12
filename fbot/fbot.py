@@ -90,25 +90,22 @@ class user(StatesGroup):
 
 @dp.callback_query_handler(text='new_user', state='*')
 async def start_auth_for_the_new_user(callback: CallbackQuery):
-    await callback.message.answer('Введите логин минимум - 8 символов')
+    await callback.message.answer('Введите email')
     await user.add_name.set()
 
 
 @dp.message_handler(state=user.add_name, content_types=ContentTypes.TEXT)
 async def add_user_nickname(message: Message, state: FSMContext) -> Message:
 
-    user_nickname = message.text.lower()
-    if len(user_nickname) < 8:
-        await message.answer('Введите логин минимум - 8 символов')
+    user_email = message.text.lower()
 
-    else:
-        await state.update_data(
-            user_id = message.from_user.id,
-            user_nickname=user_nickname
-        )
-        
-        await message.answer('Введите пароль: минимум - 8 символов')
-        await user.add_password.set()
+    await state.update_data(
+        user_id = message.from_user.id,
+        user_email=user_email
+    )
+    
+    await message.answer('Введите пароль: минимум - 8 символов')
+    await user.add_password.set()
 
 
 @dp.message_handler(state=user.add_password, content_types=ContentTypes.TEXT)
@@ -123,7 +120,7 @@ async def add_user_password(message: Message, state: FSMContext) -> Message:
 
         data = await state.get_data()
         msg = '\n'.join([
-            f"Логин: {data['user_nickname']}",
+            f"Email: {data['user_email']}",
             f"Пароль: {data['user_password']}"
         ])
         await message.answer(msg, reply_markup=check_user_auth_keyword())
@@ -134,7 +131,8 @@ async def add_user_password(message: Message, state: FSMContext) -> Message:
 async def user_auth(callback: CallbackQuery, state: FSMContext) -> Message:
     state_data = await state.get_data()
     data = {
-        'user_nickname': state_data['user_nickname'],
+        'user_chat_id': state_data['user_id'],
+        'user_email': state_data['user_email'],
         'user_password': state_data['user_password']
     }
 
@@ -158,11 +156,14 @@ class category(StatesGroup):
 
 @dp.callback_query_handler(text='all_categories')
 async def shau(callback: CallbackQuery, state: FSMContext):
-
-    res = requests.get('http://127.0.0.1:8000/api/get_categories/')
+    res = requests.get('http://127.0.0.1:8000/api/get_categories/', data={'user_chat_id': callback.from_user.id})
     data = res.json()['msg']
-    msg = '\n'.join([f'{key.capitalize()}: {value}' for key, value in data[0].items()])
-    await callback.message.answer(msg)
+
+    if data[0]:
+        msg = '\n'.join([f'{key.capitalize()}: {value}' for key, value in data[0].items()])
+        await callback.message.answer(msg)
+    else:
+        await callback.message.answer('У вас пока нет добавленных категорий ')
 
 
 @dp.callback_query_handler(text='add_category', state='*')
@@ -176,7 +177,10 @@ async def add_func(callback: CallbackQuery, state: FSMContext) -> Message:
 async def add_func(message: Message, state: FSMContext) -> Message:
 
     user_category = message.text.lower()
-    await state.update_data(category=user_category)
+    await state.update_data(
+        user_chat_id=message.from_user.id,
+        category=user_category
+    )
     
     await message.answer(f"Введите ключевые слова категории трат: \
                         например, если категория трат - еда <хлеб, молоко, шоколад>")
@@ -212,6 +216,7 @@ async def add_func(callback: CallbackQuery, state: FSMContext) -> Message:
 @dp.message_handler(state=expense.add, content_types=ContentTypes.TEXT)
 async def shau(message: Message, state: FSMContext):
     data = {
+        'user_chat_id': message.from_user.id,
         'msg_text':str(message.text)
     }
     res = requests.post('http://127.0.0.1:8000/api/add_expense/', data=data)
